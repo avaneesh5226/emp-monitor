@@ -1,8 +1,12 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
+// The GitHub Pages build is served at /emp-monitor/. Local and the Node server stay at /.
+const pages = process.env.VITE_UI_ONLY === 'true';
+
 // https://vite.dev/config/
 export default defineConfig({
+  base: pages ? '/emp-monitor/' : '/',
   plugins: [react()],
   server: {
     proxy: {

@@ -1,6 +1,8 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 
 const AuthContext = createContext(null);
+const uiOnly = import.meta.env.VITE_UI_ONLY === 'true';
+const deskUser = { id: 0, username: 'desk', role: 'admin', employeeId: null };
 
 const parseJwt = (token) => {
   try {
@@ -11,11 +13,16 @@ const parseJwt = (token) => {
 };
 
 export const AuthProvider = ({ children }) => {
-  const [user, setUser] = useState(null);
-  const [token, setToken] = useState(localStorage.getItem('token') || null);
-  const [loading, setLoading] = useState(true);
+  const [user, setUser] = useState(uiOnly ? deskUser : null);
+  const [token, setToken] = useState(uiOnly ? 'ui-only' : (localStorage.getItem('token') || null));
+  const [loading, setLoading] = useState(!uiOnly);
 
   useEffect(() => {
+    if (uiOnly) {
+      setUser(token ? deskUser : null);
+      setLoading(false);
+      return;
+    }
     if (token) {
       const decoded = parseJwt(token);
       if (decoded) {
@@ -30,6 +37,11 @@ export const AuthProvider = ({ children }) => {
   }, [token]);
 
   const login = async (username, password) => {
+    if (uiOnly) {
+      setToken('ui-only');
+      setUser(deskUser);
+      return { success: true };
+    }
     try {
       const response = await fetch('/api/auth/login', {
         method: 'POST',
@@ -51,6 +63,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   const register = async (username, password, employeeId = null) => {
+    if (uiOnly) return login(username, password);
     try {
       const response = await fetch('/api/auth/register', {
         method: 'POST',
@@ -69,6 +82,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   const googleLogin = async (googleToken) => {
+    if (uiOnly) return login('desk', '');
     try {
       const response = await fetch('/api/auth/google-login', {
         method: 'POST',
@@ -89,6 +103,11 @@ export const AuthProvider = ({ children }) => {
   };
 
   const logout = () => {
+    if (uiOnly) {
+      setToken(null);
+      setUser(null);
+      return;
+    }
     setToken(null);
     setUser(null);
     localStorage.removeItem('token');

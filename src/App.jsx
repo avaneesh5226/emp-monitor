@@ -37,10 +37,14 @@ const DashboardSelector = () => {
   return user?.role === 'admin' ? <Dashboard /> : <EmployeeDashboard />;
 };
 
+const routerBasename = import.meta.env.BASE_URL === '/'
+  ? undefined
+  : import.meta.env.BASE_URL.replace(/\/$/, '');
+
 function App() {
   return (
     <AuthProvider>
-      <Router>
+      <Router basename={routerBasename}>
         <Routes>
           <Route path="/login" element={<Login />} />
           
