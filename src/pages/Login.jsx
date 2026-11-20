@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ShieldAlert, Loader2, Clock, Target, Camera } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 const Login = () => {
@@ -11,29 +10,24 @@ const Login = () => {
   const [employeeId, setEmployeeId] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  
+
   const { login, register, googleLogin } = useAuth();
   const navigate = useNavigate();
+  const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
+  const googleReady = Boolean(googleClientId) && !googleClientId.includes('YOUR_GOOGLE');
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
     setIsLoading(true);
 
-    let result;
-    if (isLogin) {
-      result = await login(username, password);
-    } else {
-      result = await register(username, password, role === 'employee' ? employeeId.trim() : null);
-    }
+    const result = isLogin
+      ? await login(username, password)
+      : await register(username, password, role === 'employee' ? employeeId.trim() : null);
 
     setIsLoading(false);
-
-    if (result.success) {
-      navigate('/dashboard');
-    } else {
-      setError(result.error);
-    }
+    if (result.success) navigate('/dashboard');
+    else setError(result.error);
   };
 
   const handleGoogleCredentialResponse = async (response) => {
@@ -41,182 +35,134 @@ const Login = () => {
     setError('');
     const result = await googleLogin(response.credential);
     setIsLoading(false);
-    if (result.success) {
-      navigate('/dashboard');
-    } else {
-      setError(result.error);
-    }
+    if (result.success) navigate('/dashboard');
+    else setError(result.error);
   };
 
   useEffect(() => {
+    if (!googleReady) return undefined;
+    let cancelled = false;
+
     const initializeGoogle = () => {
-      if (window.google) {
-        window.google.accounts.id.initialize({
-          client_id: import.meta.env.VITE_GOOGLE_CLIENT_ID || "YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com",
-          callback: handleGoogleCredentialResponse
-        });
-        window.google.accounts.id.renderButton(
-          document.getElementById("googleSignInButton"),
-          { theme: "outline", size: "large", width: "100%" }
-        );
+      if (cancelled || !window.google) return;
+      window.google.accounts.id.initialize({
+        client_id: googleClientId,
+        callback: handleGoogleCredentialResponse
+      });
+      const node = document.getElementById('googleSignInButton');
+      if (node) {
+        node.innerHTML = '';
+        window.google.accounts.id.renderButton(node, { theme: 'outline', size: 'large', width: 320 });
       }
     };
 
-    if (window.google) {
-      initializeGoogle();
-    } else {
+    if (window.google) initializeGoogle();
+    else if (!document.querySelector('script[data-gsi]')) {
       const script = document.createElement('script');
       script.src = 'https://accounts.google.com/gsi/client';
       script.async = true;
       script.defer = true;
+      script.dataset.gsi = '1';
       script.onload = initializeGoogle;
       document.body.appendChild(script);
     }
-  }, []);
+
+    return () => { cancelled = true; };
+  }, [isLogin, googleReady, googleClientId]);
 
   return (
-    <div className="auth-layout fade-in">
-      {/* Left Info Panel */}
-      <div className="auth-info-panel">
-        <div className="auth-info-content">
-          <div className="logo-badge">
-            <ShieldAlert size={18} style={{ color: '#60a5fa' }} />
-            <span>EmpMonitor Enterprise v2.0</span>
-          </div>
-          <h1 className="auth-title">Workplace productivity, beautifully visualised.</h1>
-          <p className="auth-description">
-            EmpMonitor provides corporate administrators with transparent, secure, and real-time insights into remote workforce metrics, focus habits, and project logs.
-          </p>
-          <div className="auth-features">
-            <div className="auth-feature-item">
-              <div className="auth-feature-icon" style={{ color: '#059669', background: '#ecfdf5' }}>
-                <Clock size={20} />
-              </div>
-              <div>
-                <h4>Scheduled Attendance Windows</h4>
-                <p>Verifiable manual clock-in times custom-tailored by corporate administrators.</p>
-              </div>
+    <div className="auth-layout">
+      <aside className="auth-aside">
+        <div className="auth-mark">EmpMonitor</div>
+        <h1>The floor, as it is.</h1>
+        <p>Clock-ins, the applications in front of people, and the screens behind the hours.</p>
+        <ol className="auth-list">
+          <li>
+            <em>01</em>
+            <div>
+              <strong>Attendance window</strong>
+              <span>Clock-in only inside the hours you set.</span>
             </div>
-            <div className="auth-feature-item">
-              <div className="auth-feature-icon" style={{ color: '#2563eb', background: '#eff6ff' }}>
-                <Target size={20} />
-              </div>
-              <div>
-                <h4>Focus & Application Insights</h4>
-                <p>Detailed application usage metrics categorised dynamically by focus scores.</p>
-              </div>
+          </li>
+          <li>
+            <em>02</em>
+            <div>
+              <strong>Application mix</strong>
+              <span>What stayed in front, and whether it counted as work.</span>
             </div>
-            <div className="auth-feature-item">
-              <div className="auth-feature-icon" style={{ color: '#d97706', background: '#fffbeb' }}>
-                <Camera size={20} />
-              </div>
-              <div>
-                <h4>Screen Capture Timeline</h4>
-                <p>Automated desktop logs providing an audit trail for payroll transparency.</p>
-              </div>
+          </li>
+          <li>
+            <em>03</em>
+            <div>
+              <strong>Screen record</strong>
+              <span>A timed strip of captures, not a live camera.</span>
             </div>
-          </div>
-          <div className="auth-info-footer">
-            © 2026 EmpMonitor System. All rights reserved.
-          </div>
-        </div>
-      </div>
+          </li>
+        </ol>
+        <footer>Desk record · {new Date().getFullYear()}</footer>
+      </aside>
 
-      {/* Right Form Panel */}
-      <div className="auth-form-panel">
+      <main className="auth-main">
         <div className="auth-card slide-up">
-          <div className="auth-header">
-            <h2 style={{ fontSize: '1.75rem', fontWeight: 700, letterSpacing: '-0.5px' }}>
-              {isLogin ? 'Welcome Back' : 'Get Started'}
-            </h2>
-            <p className="subtitle" style={{ margin: '0.25rem 0 0 0' }}>
-              {isLogin ? 'Sign in to access your dashboard' : 'Create your account'}
-            </p>
-          </div>
+          <span className="kicker">{isLogin ? 'Sign in' : 'New account'}</span>
+          <h2>{isLogin ? 'Open the record' : 'Create a login'}</h2>
+          <p className="subtitle">{isLogin ? 'Use the account an administrator issued.' : 'Employees need an ID that already exists in the directory.'}</p>
 
-          {error && (
-            <div className="auth-error fade-in">
-              {error}
-            </div>
-          )}
+          {error && <div className="auth-error">{error}</div>}
 
           <form onSubmit={handleSubmit} className="auth-form">
             {!isLogin && (
               <>
                 <div className="form-group">
-                  <label>Register As</label>
-                  <select 
-                    className="auth-input" 
-                    value={role} 
-                    onChange={(e) => setRole(e.target.value)}
-                    style={{ width: '100%', cursor: 'pointer' }}
-                  >
+                  <label htmlFor="auth-role">Register as</label>
+                  <select id="auth-role" className="auth-input" value={role} onChange={(e) => setRole(e.target.value)}>
                     <option value="admin">Admin</option>
                     <option value="employee">Employee</option>
                   </select>
                 </div>
-
                 {role === 'employee' && (
-                  <div className="form-group fade-in">
-                    <label>Employee ID</label>
-                    <input 
-                      type="text" 
-                      className="auth-input" 
+                  <div className="form-group">
+                    <label htmlFor="auth-employee-id">Employee ID</label>
+                    <input
+                      id="auth-employee-id"
+                      type="text"
+                      className="auth-input"
                       value={employeeId}
                       onChange={(e) => setEmployeeId(e.target.value)}
-                      required={role === 'employee'} 
-                      placeholder="EMP-2026-001-XXXX"
+                      required
+                      placeholder="EMP-2026-001"
                     />
                   </div>
                 )}
               </>
             )}
-
             <div className="form-group">
-              <label>Username</label>
-              <input 
-                type="text" 
-                className="auth-input" 
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                required 
-                placeholder="Enter username"
-              />
+              <label htmlFor="auth-username">Username</label>
+              <input id="auth-username" className="auth-input" value={username} onChange={(e) => setUsername(e.target.value)} required autoComplete="username" />
             </div>
-            
             <div className="form-group">
-              <label>Password</label>
-              <input 
-                type="password" 
-                className="auth-input" 
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required 
-                placeholder="Enter password"
-              />
+              <label htmlFor="auth-password">Password</label>
+              <input id="auth-password" type="password" className="auth-input" value={password} onChange={(e) => setPassword(e.target.value)} required autoComplete={isLogin ? 'current-password' : 'new-password'} />
             </div>
-
-            <button type="submit" className="primary-btn auth-submit" disabled={isLoading} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              {isLoading ? <Loader2 className="spinner" size={18} /> : (isLogin ? 'Sign In' : 'Register')}
+            <button type="submit" className="primary-btn auth-submit" disabled={isLoading}>
+              {isLoading ? 'Checking…' : isLogin ? 'Sign in' : 'Create account'}
             </button>
           </form>
 
-          <div className="auth-divider">
-            <span>or sign in with</span>
-          </div>
-
-          <div id="googleSignInButton" className="google-btn-container"></div>
-
-          <div className="auth-footer">
-            <p>
-              {isLogin ? "Don't have an account? " : "Already have an account? "}
-              <button className="text-btn" onClick={() => { setIsLogin(!isLogin); setError(''); }}>
-                {isLogin ? 'Sign up' : 'Sign in'}
-              </button>
-            </p>
-          </div>
+          {googleReady && (
+            <>
+              <div className="auth-divider"><span>or</span></div>
+              <div id="googleSignInButton" className="google-btn-container" />
+            </>
+          )}
+          <p className="auth-footer">
+            {isLogin ? 'Need an account? ' : 'Already registered? '}
+            <button className="text-btn" type="button" onClick={() => { setIsLogin(!isLogin); setError(''); }}>
+              {isLogin ? 'Register' : 'Sign in'}
+            </button>
+          </p>
         </div>
-      </div>
+      </main>
     </div>
   );
 };

@@ -1,15 +1,31 @@
-import React, { useState, useEffect } from 'react';
-import { Plus, MoreHorizontal, Clock, CheckCircle2, MessageSquare } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { localDateString } from '../utils/dates';
+
+const isDone = (status) => status === 'Completed' || status === 'Done';
+
+const nextStatus = (current) => {
+  if (current === 'To Do') return 'In Progress';
+  if (current === 'In Progress') return 'Completed';
+  return 'To Do';
+};
+
+const moveLabel = (current) => {
+  if (current === 'To Do') return 'Start';
+  if (current === 'In Progress') return 'Finish';
+  return 'Reopen';
+};
 
 const Projects = () => {
   const [tasks, setTasks] = useState([]);
+  const [title, setTitle] = useState('');
+  const [error, setError] = useState('');
   const { token } = useAuth();
 
   const fetchTasks = async () => {
     try {
-      const res = await fetch('http://localhost:5000/api/tasks', {
-        headers: { 'Authorization': `Bearer ${token}` }
+      const res = await fetch('/api/tasks', {
+        headers: { Authorization: `Bearer ${token}` }
       });
       const data = await res.json();
       if (res.ok) setTasks(data);
@@ -22,98 +38,100 @@ const Projects = () => {
     if (token) fetchTasks();
   }, [token]);
 
-  const handleAddTask = async () => {
-    const title = prompt('Enter task title:');
-    if (!title) return;
-    
+  const handleAddTask = async (e) => {
+    e.preventDefault();
+    const next = title.trim();
+    if (!next) return;
     try {
-      const res = await fetch('http://localhost:5000/api/tasks', {
+      const res = await fetch('/api/tasks', {
         method: 'POST',
-        headers: { 
+        headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
+          Authorization: `Bearer ${token}`
         },
         body: JSON.stringify({
-          title,
-          description: 'A new task for the team.',
+          title: next,
+          description: 'Added from the task board.',
           status: 'To Do',
           urgency: 'Normal',
-          dueDate: new Date().toISOString().split('T')[0]
+          dueDate: localDateString()
         })
       });
-      if (res.ok) fetchTasks();
+      if (res.ok) {
+        setTitle('');
+        setError('');
+        fetchTasks();
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setError(data.error || 'The task did not save.');
+      }
     } catch (err) {
       console.error(err);
     }
   };
 
-  const toDos = tasks.filter(t => t.status === 'To Do');
-  const inProgress = tasks.filter(t => t.status === 'In Progress');
-  const completed = tasks.filter(t => t.status === 'Completed');
+  const moveTask = async (task) => {
+    const status = nextStatus(task.status);
+    try {
+      const res = await fetch(`/api/tasks/${task.id}/status`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({ status })
+      });
+      if (res.ok) setTasks((prev) => prev.map((item) => (item.id === task.id ? { ...item, status } : item)));
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const columns = [
+    { name: 'To do', items: tasks.filter((task) => task.status === 'To Do') },
+    { name: 'In progress', items: tasks.filter((task) => task.status === 'In Progress') },
+    { name: 'Done', items: tasks.filter((task) => isDone(task.status)) }
+  ];
 
   return (
-    <div className="slide-up">
-      <div className="page-header-flex">
-        <div className="dashboard-header" style={{ marginBottom: 0 }}>
-          <h1>Projects & Tasks</h1>
-          <p className="subtitle">Track project progress and manage database-synced tasks.</p>
-        </div>
-        <button className="primary-btn" onClick={handleAddTask}>
-          <Plus size={18} />
-          New Task
-        </button>
+    <div className="page">
+      <div className="dashboard-header">
+        <span className="kicker">Board</span>
+        <h1>Tasks</h1>
+        <p className="subtitle">Three columns. New work starts on the left.</p>
       </div>
-      
+
+      <form className="composer" onSubmit={handleAddTask}>
+        <input
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          placeholder="What needs doing"
+          aria-label="Task title"
+        />
+        <button className="primary-btn" type="submit">Add</button>
+      </form>
+      {error && <p className="text-red">{error}</p>}
+
       <div className="kanban-board">
-        {/* TO DO Column */}
-        <div className="kanban-col">
-          <div className="col-header">
-            <span>To Do</span>
-            <span className="status-badge" style={{ background: 'var(--bg-surface)', color: 'var(--text-secondary)' }}>{toDos.length}</span>
-          </div>
-          
-          {toDos.map(task => (
-            <div className="task-card fade-in" key={task.id}>
-              <h4>{task.title}</h4>
-              <p>{task.description}</p>
-              <div className="task-meta">
-                <div style={{ display: 'flex', gap: '0.5rem', color: 'var(--text-muted)' }}>
-                  <Clock size={14} /> <span style={{ fontSize: '0.75rem' }}>{task.dueDate}</span>
+        {columns.map((column) => (
+          <section className="kanban-col" key={column.name}>
+            <div className="col-header">
+              <span>{column.name}</span>
+              <span className="status-badge">{column.items.length}</span>
+            </div>
+            {column.items.length === 0 && <p className="text-muted">Nothing here.</p>}
+            {column.items.map((task) => (
+              <article className={isDone(task.status) ? 'task-card is-done' : 'task-card'} key={task.id}>
+                <h4>{task.title}</h4>
+                <p>{task.description}</p>
+                <div className="task-meta task-actions">
+                  <span>{task.dueDate || 'No date'}{task.assignedTo ? ` · ${task.assignedTo}` : ''}</span>
+                  <button className="text-btn" type="button" onClick={() => moveTask(task)}>{moveLabel(task.status)}</button>
                 </div>
-              </div>
-            </div>
-          ))}
-        </div>
-
-        {/* IN PROGRESS Column */}
-        <div className="kanban-col">
-          <div className="col-header">
-            <span>In Progress</span>
-            <span className="status-badge" style={{ background: 'var(--bg-surface)', color: 'var(--accent-color)' }}>{inProgress.length}</span>
-          </div>
-          
-          {inProgress.map(task => (
-            <div className="task-card fade-in" key={task.id}>
-              <h4>{task.title}</h4>
-              <p>{task.description}</p>
-            </div>
-          ))}
-        </div>
-
-        {/* COMPLETED Column */}
-        <div className="kanban-col">
-          <div className="col-header">
-            <span>Completed</span>
-            <span className="status-badge" style={{ background: 'var(--bg-surface)', color: 'var(--success-color)' }}>{completed.length}</span>
-          </div>
-          
-          {completed.map(task => (
-            <div className="task-card fade-in" key={task.id} style={{ opacity: 0.7 }}>
-              <h4 style={{ textDecoration: 'line-through' }}>{task.title}</h4>
-              <p>{task.description}</p>
-            </div>
-          ))}
-        </div>
+              </article>
+            ))}
+          </section>
+        ))}
       </div>
     </div>
   );

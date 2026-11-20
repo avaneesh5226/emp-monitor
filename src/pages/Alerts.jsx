@@ -2,18 +2,19 @@ import React from 'react';
 
 const Alerts = () => {
   return (
-    <div className="slide-up">
+    <div className="page">
       <div className="dashboard-header">
-        <h1>Security Alerts</h1>
-        <p className="subtitle">Review and manage recent security warnings and insider threats.</p>
+        <span className="kicker">Watch</span>
+        <h1>Alerts</h1>
+        <p className="subtitle">Warnings land here when a rule fires. Nothing is queued.</p>
       </div>
-      
-      <div className="card p-6 border-red">
-        <h2 className="card-title text-red">High Priority Alerts</h2>
-        <div className="empty-state">
-          <p className="text-muted">Security alert module will be implemented here.</p>
+      <section className="panel card">
+        <div className="section-head">
+          <h2 className="card-title">Open</h2>
+          <span className="status-badge">0</span>
         </div>
-      </div>
+        <p className="text-muted">The desk is quiet. A late clock-in or a blocked capture will show as a row in this list.</p>
+      </section>
     </div>
   );
 };

@@ -1,0 +1,13 @@
+node_modules
+backend/node_modules
+desktop-agent/node_modules
+dist
+.git
+.github
+*.sqlite
+*.sqlite-journal
+backend/uploads
+.env
+.env.*
+*.log
+.DS_Store

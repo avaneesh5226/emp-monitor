@@ -22,7 +22,7 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: "http://localhost:5173",
+    origin: true,
     methods: ["GET", "POST", "PUT"]
   }
 });
@@ -30,11 +30,60 @@ const io = new Server(server, {
 const PORT = process.env.PORT || 5000;
 const JWT_SECRET = process.env.JWT_SECRET || 'supersecret_empmonitor_key_2026';
 
+const localDateString = (date = new Date()) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const formatClock = (date = new Date()) => date.toLocaleTimeString('en-US', {
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+  hour12: true
+});
+
+const formatHours = (ms) => {
+  const total = Math.max(0, Math.round(ms / 60000));
+  return `${Math.floor(total / 60)}h ${total % 60}m`;
+};
+
+const clockInstant = (dateStr, timeStr) => {
+  if (!dateStr || !timeStr || timeStr === '--') return null;
+  const match = String(timeStr).match(/(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)?/i);
+  if (!match) return null;
+  let hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  const seconds = Number(match[3] || 0);
+  const meridiem = (match[4] || '').toUpperCase();
+  if (meridiem === 'PM' && hours < 12) hours += 12;
+  if (meridiem === 'AM' && hours === 12) hours = 0;
+  const [year, month, day] = dateStr.split('-').map(Number);
+  if (!year || !month || !day) return null;
+  return new Date(year, month - 1, day, hours, minutes, seconds);
+};
+
+const elapsedLabel = (row, end = new Date()) => {
+  const start = clockInstant(row.date, row.clockIn);
+  if (!start) return row.activeHours || '0h 0m';
+  const stop = row.status === 'Active' || !row.clockOut || row.clockOut === '--'
+    ? end
+    : (clockInstant(row.date, row.clockOut) || end);
+  return formatHours(stop - start);
+};
+
+const withLiveHours = (row) => (
+  row && row.status === 'Active' ? { ...row, activeHours: elapsedLabel(row) } : row
+);
+
 app.use(cors());
 app.use(express.json());
-// Serve screenshots statically
+// Serve screenshots statically. DATA_DIR is the persistent disk in production.
 const path = require('path');
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+const dataDir = process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : __dirname;
+const uploadsDir = path.join(dataDir, 'uploads');
+app.use('/uploads', express.static(uploadsDir));
 
 // Initialize Database Schemas
 initializeDatabase();
@@ -109,7 +158,7 @@ io.on('connection', (socket) => {
 
     // Only log active app usage
     if (data.status === 'Active' && data.appName) {
-      const today = new Date().toISOString().split('T')[0];
+      const today = localDateString();
       const cleanAppName = getCleanAppName(data.appName, data.windowTitle || '');
       const category = categorizeApp(data.appName, data.windowTitle || '');
       
@@ -129,10 +178,10 @@ io.on('connection', (socket) => {
     const fs = require('fs');
     const base64Data = data.image.replace(/^data:image\/jpeg;base64,/, "");
     const fileName = `screenshot_${data.employeeId}_${Date.now()}.jpg`;
-    const today = new Date().toISOString().split('T')[0];
+    const today = localDateString();
     
-    const dir = path.join(__dirname, 'uploads');
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir);
+    const dir = uploadsDir;
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
     
     fs.writeFile(path.join(dir, fileName), base64Data, 'base64', (err) => {
       if (err) console.error('Error saving screenshot:', err);
@@ -144,7 +193,7 @@ io.on('connection', (socket) => {
             io.emit('screenshot_uploaded', {
               employeeId: data.employeeId,
               screenshot: {
-                url: `http://localhost:5000/uploads/${fileName}`,
+                url: `/uploads/${fileName}`,
                 time: new Date(data.timestamp).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
               }
             });
@@ -300,15 +349,20 @@ app.post('/api/employees', authenticateToken, (req, res) => {
 
 // --- ATTENDANCE ROUTES ---
 app.get('/api/attendance', authenticateToken, (req, res) => {
-  const query = `
-    SELECT a.*, e.name, e.role 
-    FROM attendance a 
-    JOIN employees e ON a.employeeId = e.id 
-    ORDER BY a.id DESC LIMIT 50
-  `;
-  db.all(query, [], (err, rows) => {
+  const since = /^\d{4}-\d{2}-\d{2}$/.test(req.query.since || '') ? req.query.since : null;
+  const query = since
+    ? `SELECT a.*, e.name, e.role
+       FROM attendance a
+       JOIN employees e ON a.employeeId = e.id
+       WHERE a.date >= ?
+       ORDER BY a.id DESC`
+    : `SELECT a.*, e.name, e.role
+       FROM attendance a
+       JOIN employees e ON a.employeeId = e.id
+       ORDER BY a.id DESC LIMIT 50`;
+  db.all(query, since ? [since] : [], (err, rows) => {
     if (err) return res.status(500).json({ error: err.message });
-    res.json(rows);
+    res.json((rows || []).map(withLiveHours));
   });
 });
 
@@ -322,7 +376,7 @@ app.get('/api/attendance/employee/:id', authenticateToken, (req, res) => {
   `;
   db.all(query, [req.params.id], (err, rows) => {
     if (err) return res.status(500).json({ error: err.message });
-    res.json(rows);
+    res.json((rows || []).map(withLiveHours));
   });
 });
 
@@ -356,26 +410,41 @@ app.put('/api/tasks/:id/status', authenticateToken, (req, res) => {
 
 // --- ANALYTICS DASHBOARD ROUTE ---
 app.get('/api/analytics/dashboard', authenticateToken, (req, res) => {
+  const today = localDateString();
   const stats = {
     totalEmployees: 0,
     activeToday: 0,
-    avgProductivity: '82%',
-    alerts: 3
+    avgProductivity: '—',
+    alerts: 0
   };
-  
+
   db.get('SELECT COUNT(*) as count FROM employees', [], (err, empRow) => {
-    if (!err) stats.totalEmployees = empRow.count;
-    
-    db.get('SELECT COUNT(DISTINCT employeeId) as count FROM attendance WHERE date = ?', [new Date().toISOString().split('T')[0]], (err, attRow) => {
-      if (!err) stats.activeToday = attRow.count;
-      res.json(stats);
+    if (!err && empRow) stats.totalEmployees = empRow.count;
+
+    db.get('SELECT COUNT(DISTINCT employeeId) as count FROM attendance WHERE date = ? AND status = ?', [today, 'Active'], (err, attRow) => {
+      if (!err && attRow) stats.activeToday = attRow.count;
+
+      db.all('SELECT category, SUM(durationMinutes) as mins FROM app_usage WHERE date = ? GROUP BY category', [today], (err, rows) => {
+        if (!err && rows && rows.length) {
+          let prod = 0;
+          let total = 0;
+          rows.forEach((row) => {
+            const mins = row.mins || 0;
+            total += mins;
+            if (row.category === 'Productive') prod += mins;
+            else if (row.category === 'Neutral') prod += mins * 0.5;
+          });
+          stats.avgProductivity = total > 0 ? `${Math.round((prod / total) * 100)}%` : '—';
+        }
+        res.json(stats);
+      });
     });
   });
 });
 
 app.get('/api/analytics/employee/:id', authenticateToken, (req, res) => {
   const employeeId = req.params.id;
-  const today = new Date().toISOString().split('T')[0];
+  const today = localDateString();
 
   const result = {
     employeeId,
@@ -385,26 +454,23 @@ app.get('/api/analytics/employee/:id', authenticateToken, (req, res) => {
   };
 
   // Get App Usage
-  db.all('SELECT appName, durationMinutes, category FROM app_usage WHERE employeeId = ? AND date = ? ORDER BY durationMinutes DESC LIMIT 5', [employeeId, today], (err, apps) => {
-    if (!err && apps) {
-      result.topApps = apps.map(a => ({ name: a.appName, value: a.durationMinutes, category: a.category }));
-      
-      // Calculate basic productivity score based on categories
-      let prodScore = 0;
-      let total = 0;
-      apps.forEach(a => {
-        total += a.durationMinutes;
-        if (a.category === 'Productive') prodScore += a.durationMinutes;
-        else if (a.category === 'Neutral') prodScore += (a.durationMinutes * 0.5);
-      });
-      result.productivityScore = total > 0 ? Math.round((prodScore / total) * 100) : 0;
-    }
+  db.all('SELECT appName, durationMinutes, category FROM app_usage WHERE employeeId = ? AND date = ? ORDER BY durationMinutes DESC', [employeeId, today], (err, apps) => {
+    const rows = (!err && apps) ? apps : [];
+    result.topApps = rows.slice(0, 5).map(a => ({ name: a.appName, value: a.durationMinutes, category: a.category }));
+    let prodScore = 0;
+    let total = 0;
+    rows.forEach(a => {
+      total += a.durationMinutes;
+      if (a.category === 'Productive') prodScore += a.durationMinutes;
+      else if (a.category === 'Neutral') prodScore += (a.durationMinutes * 0.5);
+    });
+    result.productivityScore = total > 0 ? Math.round((prodScore / total) * 100) : 0;
 
     // Get Screenshots
     db.all('SELECT filename, timestamp FROM screenshots WHERE employeeId = ? AND date = ? ORDER BY id DESC', [employeeId, today], (err, shots) => {
       if (!err && shots) {
         result.screenshots = shots.map(s => ({
-          url: `http://localhost:5000/uploads/${s.filename}`,
+          url: `/uploads/${s.filename}`,
           time: new Date(s.timestamp).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
         }));
       }
@@ -458,10 +524,10 @@ app.get('/api/attendance/today', authenticateToken, (req, res) => {
   if (!employeeId) {
     return res.status(400).json({ error: 'This user is not associated with an employee profile.' });
   }
-  const today = new Date().toISOString().split('T')[0];
+  const today = localDateString();
   db.get('SELECT * FROM attendance WHERE employeeId = ? AND date = ?', [employeeId, today], (err, row) => {
     if (err) return res.status(500).json({ error: err.message });
-    res.json(row || null);
+    res.json(row ? withLiveHours(row) : null);
   });
 });
 
@@ -471,7 +537,7 @@ app.post('/api/attendance/clock-in', authenticateToken, (req, res) => {
     return res.status(400).json({ error: 'This user is not associated with an employee profile.' });
   }
 
-  const today = new Date().toISOString().split('T')[0];
+  const today = localDateString();
 
   // Fetch window settings
   db.get("SELECT value FROM settings WHERE key = 'attendance_window'", [], (err, row) => {
@@ -507,7 +573,7 @@ app.post('/api/attendance/clock-in', authenticateToken, (req, res) => {
       }
 
       // Create attendance entry
-      const nowStr = new Date().toLocaleTimeString('en-US'); // exact timestamp with seconds
+      const nowStr = formatClock();
       db.run(
         'INSERT INTO attendance (employeeId, status, clockIn, clockOut, activeHours, date) VALUES (?, ?, ?, ?, ?, ?)',
         [employeeId, 'Active', nowStr, '--', '0h 0m', today],
@@ -533,7 +599,7 @@ app.post('/api/attendance/clock-out', authenticateToken, (req, res) => {
     return res.status(400).json({ error: 'This user is not associated with an employee profile.' });
   }
 
-  const today = new Date().toISOString().split('T')[0];
+  const today = localDateString();
 
   db.get('SELECT * FROM attendance WHERE employeeId = ? AND date = ?', [employeeId, today], (err, existing) => {
     if (err) return res.status(500).json({ error: err.message });
@@ -544,11 +610,12 @@ app.post('/api/attendance/clock-out', authenticateToken, (req, res) => {
       return res.status(400).json({ error: 'You are already clocked out.' });
     }
 
-    const nowStr = new Date().toLocaleTimeString('en-US'); // exact timestamp with seconds
-    
+    const nowStr = formatClock();
+    const activeHours = elapsedLabel({ ...existing, status: 'Inactive', clockOut: nowStr });
+
     db.run(
-      "UPDATE attendance SET status = 'Inactive', clockOut = ? WHERE id = ?",
-      [nowStr, existing.id],
+      "UPDATE attendance SET status = 'Inactive', clockOut = ?, activeHours = ? WHERE id = ?",
+      [nowStr, activeHours, existing.id],
       function(err) {
         if (err) return res.status(500).json({ error: err.message });
 
@@ -557,7 +624,7 @@ app.post('/api/attendance/clock-out', authenticateToken, (req, res) => {
           io.emit('attendance_update', { type: 'CLOCK_OUT', employee: empName, time: nowStr });
         });
 
-        res.json({ message: 'Clocked out successfully', clockOut: nowStr });
+        res.json({ message: 'Clocked out successfully', clockOut: nowStr, activeHours });
       }
     );
   });
@@ -576,46 +643,26 @@ app.get('/api/download-tracker', (req, res) => {
   }
 });
 
-// --- INTEGRATED TRACKER SIMULATION (Live Socket Events) ---
-const formatTime = (date) => date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-
-setInterval(() => {
-  db.all('SELECT id, name FROM employees WHERE status = "Active"', [], (err, employees) => {
-    if (err || employees.length === 0) return;
-
-    const emp = employees[Math.floor(Math.random() * employees.length)];
-    const today = new Date().toISOString().split('T')[0];
-
-    db.get('SELECT * FROM attendance WHERE employeeId = ? AND date = ?', [emp.id, today], (err, row) => {
-      if (err) return;
-
-      // Do NOT automatically clock in employees anymore. They must clock in manually.
-      if (!row) {
-        return;
-      } else if (row.status === 'Active') {
-        // Update Hours
-        const currentMins = parseInt(row.activeHours.split('h ')[1]) || 0;
-        const newMins = currentMins + 5;
-        const newHours = newMins >= 60 ? parseInt(row.activeHours.split('h')[0]) + 1 : parseInt(row.activeHours.split('h')[0]);
-        const finalMins = newMins % 60;
-        const updatedHours = `${newHours}h ${finalMins}m`;
-        
-        db.run('UPDATE attendance SET activeHours = ? WHERE id = ?', [updatedHours, row.id], () => {
-          console.log(`[Tracker] ${emp.name} working. Active: ${updatedHours}`);
-          io.emit('attendance_update', { type: 'UPDATE_HOURS', employee: emp.name, activeHours: updatedHours });
-        });
-      }
-    });
-  });
-}, 15000);
-
 // --- HEARTBEAT FOR TASK RETENTION ---
 setInterval(() => {
   console.log(`[Heartbeat] Backend server is alive - ${new Date().toISOString()}`);
 }, 30000);
 
+// Serve the built React app from the same origin as the API.
+const distPath = path.join(__dirname, '../dist');
+const fs = require('fs');
+if (fs.existsSync(distPath)) {
+  app.use(express.static(distPath));
+  app.use((req, res, next) => {
+    if (req.method !== 'GET' || req.path.startsWith('/api') || req.path.startsWith('/uploads') || req.path.startsWith('/socket.io')) {
+      return next();
+    }
+    res.sendFile(path.join(distPath, 'index.html'));
+  });
+}
+
 // --- START SERVER ---
-server.listen(PORT, () => {
+server.listen(PORT, '0.0.0.0', () => {
   console.log(`Backend Server running on http://localhost:${PORT}`);
   console.log(`WebSocket Server listening for live events...`);
 });

@@ -1,24 +1,29 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, Filter, MoreVertical, Plus, UserPlus, X } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { localDateString } from '../utils/dates';
+
+const emptyForm = () => ({
+  name: '',
+  role: '',
+  department: '',
+  location: '',
+  joinDate: localDateString()
+});
 
 const Employees = () => {
   const navigate = useNavigate();
+  const { token } = useAuth();
   const [searchTerm, setSearchTerm] = useState('');
   const [employees, setEmployees] = useState([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const { token } = useAuth();
-  
-  // Form State
-  const [formData, setFormData] = useState({
-    name: '', role: '', department: '', location: '', joinDate: new Date().toISOString().split('T')[0]
-  });
+  const [formError, setFormError] = useState('');
+  const [formData, setFormData] = useState(emptyForm);
 
   const fetchEmployees = async () => {
     try {
-      const res = await fetch('http://localhost:5000/api/employees', {
-        headers: { 'Authorization': `Bearer ${token}` }
+      const res = await fetch('/api/employees', {
+        headers: { Authorization: `Bearer ${token}` }
       });
       const data = await res.json();
       if (res.ok) setEmployees(data);
@@ -34,113 +39,103 @@ const Employees = () => {
   const handleAddEmployee = async (e) => {
     e.preventDefault();
     try {
-      const res = await fetch('http://localhost:5000/api/employees', {
+      const res = await fetch('/api/employees', {
         method: 'POST',
-        headers: { 
+        headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
+          Authorization: `Bearer ${token}`
         },
         body: JSON.stringify(formData)
       });
       if (res.ok) {
         setIsModalOpen(false);
+        setFormError('');
+        setFormData(emptyForm());
         fetchEmployees();
-        setFormData({ name: '', role: '', department: '', location: '', joinDate: new Date().toISOString().split('T')[0] });
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setFormError(data.error || 'Could not add this person.');
       }
     } catch (err) {
       console.error(err);
     }
   };
 
-  const filteredEmployees = employees.filter(emp => 
-    emp.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-    emp.role.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    emp.department.toLowerCase().includes(searchTerm.toLowerCase())
+  const filtered = employees.filter((emp) =>
+    [emp.name, emp.role, emp.department].some((value) =>
+      String(value || '').toLowerCase().includes(searchTerm.toLowerCase())
+    )
   );
 
+  const setField = (key) => (e) => setFormData({ ...formData, [key]: e.target.value });
+
   return (
-    <div className="slide-up">
+    <div className="page">
       <div className="page-header-flex">
-        <div className="dashboard-header" style={{ marginBottom: 0 }}>
-          <h1>Employee Directory</h1>
-          <p className="subtitle">Manage and view details of all {employees.length} employees in your organization.</p>
+        <div className="dashboard-header">
+          <span className="kicker">Directory</span>
+          <h1>People</h1>
+          <p className="subtitle">{employees.length} names on the floor record.</p>
         </div>
-        <button className="primary-btn" onClick={() => setIsModalOpen(true)}>
-          <UserPlus size={18} />
-          Add Employee
-        </button>
+        <button className="primary-btn" onClick={() => { setFormError(''); setIsModalOpen(true); }}>Add person</button>
       </div>
-      
+
       <div className="card table-card">
         <div className="table-toolbar">
-          <div className="header-search table-search">
-            <Search size={16} className="search-icon" />
-            <input 
-              type="text" 
-              placeholder="Search by name, role, or department..." 
+          <div className="table-search">
+            <input
               className="search-input"
+              aria-label="Search people"
+              placeholder="Name, role, or department"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
           </div>
-          <div className="toolbar-actions">
-            <button className="secondary-btn"><Filter size={16} /> Filters</button>
-            <button className="secondary-btn">Export</button>
-          </div>
         </div>
-
         <div className="table-container">
           <table className="data-table">
             <thead>
               <tr>
-                <th>Employee Name</th>
-                <th>Role & Department</th>
-                <th>Location</th>
+                <th>Name</th>
+                <th>Role</th>
+                <th>Place</th>
                 <th>Status</th>
-                <th>Join Date</th>
-                <th className="action-cell">Actions</th>
+                <th>Joined</th>
+                <th></th>
               </tr>
             </thead>
             <tbody>
-              {filteredEmployees.length > 0 ? (
-                filteredEmployees.map((emp, index) => (
-                  <tr key={emp.id} className={`fade-in stagger-${(index % 4) + 1}`}>
-                    <td>
-                      <div className="employee-cell">
-                        <div className="avatar sm">{emp.name.charAt(0)}</div>
-                        <div className="emp-info">
-                          <span className="emp-name">{emp.name}</span>
-                          <span className="emp-id">{emp.id}</span>
-                        </div>
-                      </div>
-                    </td>
-                    <td>
+              {filtered.length > 0 ? filtered.map((emp) => (
+                <tr key={emp.id}>
+                  <td>
+                    <div className="employee-cell">
+                      <div className="avatar sm">{emp.name.charAt(0)}</div>
                       <div className="emp-info">
-                        <span className="emp-role">{emp.role}</span>
-                        <span className="emp-dept">{emp.department}</span>
+                        <span className="emp-name">{emp.name}</span>
+                        <span className="emp-id">{emp.id}</span>
                       </div>
-                    </td>
-                    <td className="text-muted">{emp.location}</td>
-                    <td>
-                      <span className={`status-badge ${emp.status.toLowerCase().replace(' ', '-')}`}>
-                        {emp.status}
-                      </span>
-                    </td>
-                    <td className="text-muted">{emp.joinDate}</td>
-                    <td className="action-cell">
-                      <button className="secondary-btn" onClick={() => navigate(`/analytics/${emp.id}`)} style={{ fontSize: '0.8rem', padding: '0.25rem 0.5rem' }}>
-                        View Profile
-                      </button>
-                    </td>
-                  </tr>
-                ))
-              ) : (
-                <tr>
-                  <td colSpan="6">
-                    <div className="empty-state sm">
-                      <p className="text-muted">No employees found.</p>
                     </div>
                   </td>
+                  <td>
+                    <div className="emp-info">
+                      <span className="emp-role">{emp.role}</span>
+                      <span className="emp-dept">{emp.department}</span>
+                    </div>
+                  </td>
+                  <td className="text-muted">{emp.location || '—'}</td>
+                  <td>
+                    <span className={`status-badge ${String(emp.status || '').toLowerCase().replace(' ', '-')}`}>
+                      {emp.status}
+                    </span>
+                  </td>
+                  <td className="text-muted">{emp.joinDate}</td>
+                  <td>
+                    <button className="secondary-btn" onClick={() => navigate(`/analytics/${emp.id}`)}>Open</button>
+                  </td>
+                </tr>
+              )) : (
+                <tr>
+                  <td colSpan="6"><div className="empty-state sm">No one matches that search.</div></td>
                 </tr>
               )}
             </tbody>
@@ -148,42 +143,42 @@ const Employees = () => {
         </div>
       </div>
 
-      {/* Add Employee Modal */}
       {isModalOpen && (
-        <div className="modal-overlay">
-          <div className="modal-content slide-up">
+        <div className="modal-overlay" onClick={() => setIsModalOpen(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
-              <h3>Add New Employee</h3>
-              <button className="icon-btn" onClick={() => setIsModalOpen(false)}>
-                <X size={20} />
-              </button>
+              <h3>Add a person</h3>
+              <button className="icon-btn" type="button" onClick={() => setIsModalOpen(false)} aria-label="Close">×</button>
             </div>
-            <form onSubmit={handleAddEmployee} className="modal-body">
-              <div className="form-grid">
-                <div className="form-group">
-                  <label>Full Name</label>
-                  <input type="text" className="auth-input" required value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} />
-                </div>
-                <div className="form-group">
-                  <label>Role</label>
-                  <input type="text" className="auth-input" required value={formData.role} onChange={e => setFormData({...formData, role: e.target.value})} />
-                </div>
-                <div className="form-group">
-                  <label>Department</label>
-                  <input type="text" className="auth-input" required value={formData.department} onChange={e => setFormData({...formData, department: e.target.value})} />
-                </div>
-                <div className="form-group">
-                  <label>Location</label>
-                  <input type="text" className="auth-input" value={formData.location} onChange={e => setFormData({...formData, location: e.target.value})} />
-                </div>
-                <div className="form-group">
-                  <label>Join Date</label>
-                  <input type="date" className="auth-input" required value={formData.joinDate} onChange={e => setFormData({...formData, joinDate: e.target.value})} />
+            <form onSubmit={handleAddEmployee}>
+              <div className="modal-body">
+                {formError && <p className="text-red">{formError}</p>}
+                <div className="form-grid">
+                  <div className="form-group form-span">
+                    <label htmlFor="person-name">Full name</label>
+                    <input id="person-name" className="auth-input" required value={formData.name} onChange={setField('name')} />
+                  </div>
+                  <div className="form-group">
+                    <label htmlFor="person-role">Role</label>
+                    <input id="person-role" className="auth-input" required value={formData.role} onChange={setField('role')} />
+                  </div>
+                  <div className="form-group">
+                    <label htmlFor="person-department">Department</label>
+                    <input id="person-department" className="auth-input" required value={formData.department} onChange={setField('department')} />
+                  </div>
+                  <div className="form-group">
+                    <label htmlFor="person-location">Location</label>
+                    <input id="person-location" className="auth-input" value={formData.location} onChange={setField('location')} />
+                  </div>
+                  <div className="form-group">
+                    <label htmlFor="person-joined">Join date</label>
+                    <input id="person-joined" type="date" className="auth-input" required value={formData.joinDate} onChange={setField('joinDate')} />
+                  </div>
                 </div>
               </div>
               <div className="modal-footer">
                 <button type="button" className="secondary-btn" onClick={() => setIsModalOpen(false)}>Cancel</button>
-                <button type="submit" className="primary-btn">Save Employee</button>
+                <button type="submit" className="primary-btn">Save</button>
               </div>
             </form>
           </div>

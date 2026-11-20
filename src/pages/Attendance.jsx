@@ -1,26 +1,20 @@
-import React, { useState, useEffect } from 'react';
-import { Search, Filter, Clock, LogIn, LogOut, CheckCircle2 } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import io from 'socket.io-client';
 
 const Attendance = () => {
   const [searchTerm, setSearchTerm] = useState('');
-  const [currentTime, setCurrentTime] = useState(new Date().toLocaleTimeString());
+  const [currentTime, setCurrentTime] = useState(new Date().toLocaleTimeString('en-GB'));
   const [attendanceLogs, setAttendanceLogs] = useState([]);
-  const [activeCount, setActiveCount] = useState(0);
   const { token } = useAuth();
 
-  // Fetch Attendance Logs on Mount
   const fetchLogs = async () => {
     try {
-      const res = await fetch('http://localhost:5000/api/attendance', {
-        headers: { 'Authorization': `Bearer ${token}` }
+      const res = await fetch('/api/attendance', {
+        headers: { Authorization: `Bearer ${token}` }
       });
       const data = await res.json();
-      if (res.ok) {
-        setAttendanceLogs(data);
-        setActiveCount(data.filter(log => log.status === 'Active').length);
-      }
+      if (res.ok) setAttendanceLogs(data);
     } catch (err) {
       console.error(err);
     }
@@ -30,133 +24,100 @@ const Attendance = () => {
     if (token) fetchLogs();
   }, [token]);
 
-  // Live Clock Simulation
   useEffect(() => {
-    const timer = setInterval(() => setCurrentTime(new Date().toLocaleTimeString()), 1000);
+    const timer = setInterval(() => setCurrentTime(new Date().toLocaleTimeString('en-GB')), 1000);
     return () => clearInterval(timer);
   }, []);
 
-  // WebSockets for Real-Time Updates
   useEffect(() => {
-    const socket = io('http://localhost:5000');
-    
-    socket.on('attendance_update', (event) => {
-      // Re-fetch the logs from DB to get the most accurate state
-      // (in a highly optimized app, we'd manually update the React state)
-      fetchLogs();
-    });
-
+    const socket = io();
+    socket.on('attendance_update', () => fetchLogs());
     return () => socket.disconnect();
-  }, []);
+  }, [token]);
+
+  const visible = attendanceLogs.filter((log) =>
+    String(log.name || '').toLowerCase().includes(searchTerm.toLowerCase())
+  );
+  const activeCount = attendanceLogs.filter((log) => log.status === 'Active').length;
 
   return (
-    <div className="slide-up">
+    <div className="page">
       <div className="page-header-flex">
-        <div className="dashboard-header" style={{ marginBottom: 0 }}>
-          <h1>Attendance Tracking</h1>
-          <p className="subtitle">Real-time attendance logs and active tracking for your workforce.</p>
+        <div className="dashboard-header">
+          <span className="kicker">Live</span>
+          <h1>Attendance</h1>
+          <p className="subtitle">Clock events as they land. The list refreshes when the tracker reports in.</p>
         </div>
-        
-        <div className="card live-clock-card">
-          <Clock size={16} className="text-muted" />
-          <span className="live-time">{currentTime}</span>
-        </div>
+        <div className="live-clock-card">{currentTime}</div>
       </div>
-      
-      <div className="stats-grid" style={{ marginBottom: '1.5rem', gridTemplateColumns: 'repeat(3, 1fr)' }}>
-        <div className="card p-6 border-left-accent">
-          <div className="stat-header">
-            <h3>Present Today</h3>
-            <CheckCircle2 size={18} className="text-muted" />
-          </div>
-          <p className="stat-value" style={{ fontSize: '2rem' }}>{attendanceLogs.length}</p>
-          <p className="stat-trend neutral">Based on live DB records</p>
+
+      <section className="ledger cols-3">
+        <div className="ledger-cell">
+          <span className="kicker">Rows</span>
+          <span className="figure">{attendanceLogs.length}</span>
+          <span className="meta">Latest records</span>
         </div>
-        <div className="card p-6 border-left-green">
-          <div className="stat-header">
-            <h3>Currently Active</h3>
-            <ActivityIcon />
-          </div>
-          <p className="stat-value" style={{ fontSize: '2rem' }}>{activeCount}</p>
-          <p className="stat-trend positive">Stable tracking connection</p>
+        <div className="ledger-cell">
+          <span className="kicker">Active</span>
+          <span className="figure">{activeCount}</span>
+          <span className="meta">Still clocked in</span>
         </div>
-        <div className="card p-6 border-left-warning">
-          <div className="stat-header">
-            <h3>Late Arrivals</h3>
-            <Clock size={18} className="text-muted" />
-          </div>
-          <p className="stat-value" style={{ fontSize: '2rem' }}>0</p>
-          <p className="stat-trend neutral">On time</p>
+        <div className="ledger-cell">
+          <span className="kicker">Closed</span>
+          <span className="figure">{attendanceLogs.length - activeCount}</span>
+          <span className="meta">Out, in this list</span>
         </div>
-      </div>
+      </section>
 
       <div className="card table-card">
         <div className="table-toolbar">
-          <div className="header-search table-search">
-            <Search size={16} className="search-icon" />
-            <input 
-              type="text" 
-              placeholder="Search employee attendance logs..." 
+          <div className="table-search">
+            <input
               className="search-input"
+              aria-label="Find a name"
+              placeholder="Find a name"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
           </div>
-          <div className="toolbar-actions">
-            <button className="secondary-btn"><Filter size={16} /> Filters</button>
-            <button className="secondary-btn">Export Log</button>
-          </div>
         </div>
-
         <div className="table-container">
           <table className="data-table">
             <thead>
               <tr>
-                <th>Employee</th>
+                <th>Person</th>
                 <th>Status</th>
-                <th>Clock In</th>
-                <th>Clock Out</th>
-                <th>Active Hours</th>
+                <th>In</th>
+                <th>Out</th>
+                <th>Hours</th>
               </tr>
             </thead>
             <tbody>
-              {attendanceLogs.length > 0 ? (
-                attendanceLogs.filter(log => log.name.toLowerCase().includes(searchTerm.toLowerCase())).map((log, index) => (
-                  <tr key={log.id} className={`fade-in stagger-${(index % 4) + 1}`}>
-                    <td>
-                      <div className="employee-cell">
-                        <div className="avatar sm" style={{ background: log.status === 'Active' ? 'var(--success-color)' : 'var(--text-muted)' }}>
-                          {log.name.charAt(0)}
-                        </div>
-                        <div className="emp-info">
-                          <span className="emp-name">{log.name}</span>
-                          <span className="emp-role">{log.role}</span>
-                        </div>
+              {visible.length > 0 ? visible.map((log) => (
+                <tr key={log.id}>
+                  <td>
+                    <div className="employee-cell">
+                      <div className="avatar sm">{log.name.charAt(0)}</div>
+                      <div className="emp-info">
+                        <span className="emp-name">{log.name}</span>
+                        <span className="emp-dept">{log.role}</span>
                       </div>
-                    </td>
-                    <td>
-                      <span className={`status-badge ${log.status === 'Active' ? 'active' : 'inactive'}`}>
-                        {log.status === 'Active' ? <span className="live-dot"></span> : null}
-                        {log.status}
-                      </span>
-                    </td>
-                    <td className="time-cell">
-                      <LogIn size={14} className="text-muted" />
-                      {log.clockIn}
-                    </td>
-                    <td className="time-cell">
-                      <LogOut size={14} className="text-muted" />
-                      {log.clockOut}
-                    </td>
-                    <td><strong>{log.activeHours}</strong></td>
-                  </tr>
-                ))
-              ) : (
+                    </div>
+                  </td>
+                  <td>
+                    <span className={`status-badge ${log.status === 'Active' ? 'active' : 'inactive'}`}>
+                      {log.status === 'Active' && <span className="live-dot" />}
+                      {log.status}
+                    </span>
+                  </td>
+                  <td>{log.clockIn}</td>
+                  <td>{log.clockOut}</td>
+                  <td><strong>{log.activeHours}</strong></td>
+                </tr>
+              )) : (
                 <tr>
                   <td colSpan="5">
-                    <div className="empty-state sm">
-                      <p className="text-muted">No attendance logs available yet. The desktop agent will start tracking soon.</p>
-                    </div>
+                    <div className="empty-state sm">No attendance yet. The desktop agent writes the first row.</div>
                   </td>
                 </tr>
               )}
@@ -167,11 +128,5 @@ const Attendance = () => {
     </div>
   );
 };
-
-const ActivityIcon = () => (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-muted">
-    <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
-  </svg>
-);
 
 export default Attendance;

@@ -1,5 +1,4 @@
-import React, { useState, useEffect } from 'react';
-import { Save, Clock, Info, CalendarRange } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 
 const Settings = () => {
@@ -20,198 +19,129 @@ const Settings = () => {
 
   useEffect(() => {
     if (!token) return;
-    
-    // Fetch schedule
-    fetch('http://localhost:5000/api/schedule', {
-      headers: { 'Authorization': `Bearer ${token}` }
-    })
-      .then(res => res.json())
-      .then(data => setSchedule(data))
-      .catch(err => console.error(err));
-
-    // Fetch attendance window settings
-    fetch('http://localhost:5000/api/settings/attendance-window', {
-      headers: { 'Authorization': `Bearer ${token}` }
-    })
-      .then(res => res.json())
-      .then(data => setAttendanceWindow(data))
-      .catch(err => console.error(err));
+    const headers = { Authorization: `Bearer ${token}` };
+    fetch('/api/schedule', { headers })
+      .then((res) => res.json())
+      .then((data) => setSchedule(data))
+      .catch((err) => console.error(err));
+    fetch('/api/settings/attendance-window', { headers })
+      .then((res) => res.json())
+      .then((data) => setAttendanceWindow(data))
+      .catch((err) => console.error(err));
   }, [token]);
 
   const handleSave = async (e) => {
     e.preventDefault();
+    const data = new FormData(e.currentTarget);
+    const nextSchedule = {
+      startHour: Number(data.get('startHour')),
+      startMinute: Number(data.get('startMinute')),
+      endHour: Number(data.get('endHour')),
+      endMinute: Number(data.get('endMinute')),
+      timezone: 'local'
+    };
+    const nextWindow = {
+      enabled: data.get('manualClockIn') === 'on',
+      startTime: String(data.get('startTime') || '09:00'),
+      endTime: String(data.get('endTime') || '11:00')
+    };
+    setSchedule(nextSchedule);
+    setAttendanceWindow(nextWindow);
+    setSuccessMsg('');
     setIsSaving(true);
     try {
-      const res1 = await fetch('http://localhost:5000/api/schedule', {
+      const headers = {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`
+      };
+      const res1 = await fetch('/api/schedule', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ ...schedule, timezone: 'local' })
+        headers,
+        body: JSON.stringify(nextSchedule)
       });
-
-      const res2 = await fetch('http://localhost:5000/api/settings/attendance-window', {
+      const res2 = await fetch('/api/settings/attendance-window', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify(attendanceWindow)
+        headers,
+        body: JSON.stringify(nextWindow)
       });
-
-      if (res1.ok && res2.ok) {
-        setSuccessMsg('All settings updated successfully.');
-        setTimeout(() => setSuccessMsg(''), 5000);
-      } else {
-        setSuccessMsg('Failed to update some settings. Please try again.');
-      }
+      setSuccessMsg(res1.ok && res2.ok ? 'Hours saved. Trackers pick this up within a minute.' : 'One of the saves failed.');
+      setTimeout(() => setSuccessMsg(''), 5000);
     } catch (err) {
       console.error(err);
-      setSuccessMsg('An error occurred. Please try again.');
+      setSuccessMsg('The save did not go through.');
     }
     setIsSaving(false);
   };
 
+  const setHour = (key) => (e) => {
+    const value = parseInt(e.target.value, 10);
+    setSchedule({ ...schedule, [key]: Number.isNaN(value) ? 0 : value });
+  };
+
   return (
-    <div className="slide-up">
+    <div className="page">
       <div className="dashboard-header">
-        <h1>Global Settings</h1>
-        <p className="subtitle">Configure admin controls and global tracker policies.</p>
+        <span className="kicker">Policy</span>
+        <h1>Hours</h1>
+        <p className="subtitle">When the desktop agent may record, and when people may clock in by hand.</p>
       </div>
 
-      <form onSubmit={handleSave} style={{ display: 'flex', flexDirection: 'column', gap: '2rem', maxWidth: '800px' }}>
-        
-        {/* Card 1: Tracking Work Hours */}
-        <div className="card" style={{ padding: '2rem' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.5rem' }}>
-            <Clock size={24} className="text-muted" />
-            <h2 style={{ fontSize: '1.25rem', margin: 0 }}>Global Tracking Schedule</h2>
+      <form onSubmit={handleSave} className="settings-form">
+        <section className="panel card">
+          <h2 className="card-title">Capture window</h2>
+          <div className="note">
+            <p>Screenshots and application names are taken only between these times. Agents read the change within a minute.</p>
           </div>
-
-          <div className="alert-card" style={{ background: '#eff6ff', borderColor: '#bfdbfe', marginBottom: '2rem', display: 'flex', gap: '0.5rem', padding: '1rem', borderRadius: '8px' }}>
-            <Info size={20} color="#2563eb" style={{ flexShrink: 0 }} />
-            <p style={{ fontSize: '0.85rem', color: '#1e3a8a', margin: 0 }}>
-              Desktop Agents will only capture screenshots and application data during these working hours. Modifying this will automatically update all deployed trackers within 60 seconds.
-            </p>
-          </div>
-
-          <div className="form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
+          <div className="form-grid">
             <div className="form-group">
-              <label>Start Hour (24H)</label>
-              <input 
-                type="number" 
-                min="0" max="23" 
-                className="auth-input" 
-                value={schedule.startHour}
-                onChange={e => setSchedule({...schedule, startHour: parseInt(e.target.value)})} 
-                required 
-              />
+              <label htmlFor="start-hour">Start hour</label>
+              <input id="start-hour" name="startHour" type="number" min="0" max="23" className="auth-input" value={schedule.startHour} onChange={setHour('startHour')} required />
             </div>
             <div className="form-group">
-              <label>Start Minute</label>
-              <input 
-                type="number" 
-                min="0" max="59" 
-                className="auth-input" 
-                value={schedule.startMinute}
-                onChange={e => setSchedule({...schedule, startMinute: parseInt(e.target.value)})} 
-                required 
-              />
-            </div>
-            
-            <div className="form-group">
-              <label>End Hour (24H)</label>
-              <input 
-                type="number" 
-                min="0" max="23" 
-                className="auth-input" 
-                value={schedule.endHour}
-                onChange={e => setSchedule({...schedule, endHour: parseInt(e.target.value)})} 
-                required 
-              />
+              <label htmlFor="start-minute">Start minute</label>
+              <input id="start-minute" name="startMinute" type="number" min="0" max="59" className="auth-input" value={schedule.startMinute} onChange={setHour('startMinute')} required />
             </div>
             <div className="form-group">
-              <label>End Minute</label>
-              <input 
-                type="number" 
-                min="0" max="59" 
-                className="auth-input" 
-                value={schedule.endMinute}
-                onChange={e => setSchedule({...schedule, endMinute: parseInt(e.target.value)})} 
-                required 
-              />
+              <label htmlFor="end-hour">End hour</label>
+              <input id="end-hour" name="endHour" type="number" min="0" max="23" className="auth-input" value={schedule.endHour} onChange={setHour('endHour')} required />
+            </div>
+            <div className="form-group">
+              <label htmlFor="end-minute">End minute</label>
+              <input id="end-minute" name="endMinute" type="number" min="0" max="59" className="auth-input" value={schedule.endMinute} onChange={setHour('endMinute')} required />
             </div>
           </div>
-        </div>
+        </section>
 
-        {/* Card 2: Manual Attendance Window */}
-        <div className="card" style={{ padding: '2rem' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.5rem' }}>
-            <CalendarRange size={24} className="text-muted" />
-            <h2 style={{ fontSize: '1.25rem', margin: 0 }}>Scheduled Manual Attendance Window</h2>
+        <section className="panel card">
+          <h2 className="card-title">Manual clock-in</h2>
+          <div className="note warn">
+            <p>When this is on, people clock in from their own page, and only inside the window below. The agent counts hours after that clock-in.</p>
           </div>
-
-          <div className="alert-card" style={{ background: '#fef3c7', borderColor: '#fde68a', marginBottom: '2rem', display: 'flex', gap: '0.5rem', padding: '1rem', borderRadius: '8px' }}>
-            <Info size={20} color="#d97706" style={{ flexShrink: 0 }} />
-            <p style={{ fontSize: '0.85rem', color: '#78350f', margin: 0 }}>
-              When enabled, employees must manually clock in through their dashboard. They will only be allowed to check in during the specified time window. Desktop Agents will only log hours for employees who have manually checked in.
-            </p>
+          <div className="switch-row">
+            <input
+              type="checkbox"
+              id="attendanceModeToggle"
+              name="manualClockIn"
+              checked={attendanceWindow.enabled}
+              onChange={(e) => setAttendanceWindow({ ...attendanceWindow, enabled: e.target.checked })}
+            />
+            <label htmlFor="attendanceModeToggle">Require a manual clock-in</label>
           </div>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-              <input 
-                type="checkbox" 
-                id="attendanceModeToggle"
-                checked={attendanceWindow.enabled}
-                onChange={e => setAttendanceWindow({...attendanceWindow, enabled: e.target.checked})}
-                style={{ width: '18px', height: '18px', cursor: 'pointer' }}
-              />
-              <label htmlFor="attendanceModeToggle" style={{ fontSize: '0.95rem', fontWeight: 600, cursor: 'pointer', margin: 0 }}>
-                Enable Scheduled Manual Attendance Mode
-              </label>
+          <div className={`form-grid ${attendanceWindow.enabled ? '' : 'dimmed'}`}>
+            <div className="form-group">
+              <label htmlFor="window-opens">Window opens</label>
+              <input id="window-opens" name="startTime" type="time" className="auth-input" value={attendanceWindow.startTime} onChange={(e) => setAttendanceWindow({ ...attendanceWindow, startTime: e.target.value })} required={attendanceWindow.enabled} />
             </div>
-
-            <div className="form-grid" style={{ 
-              display: 'grid', 
-              gridTemplateColumns: '1fr 1fr', 
-              gap: '1.5rem',
-              opacity: attendanceWindow.enabled ? 1 : 0.5,
-              pointerEvents: attendanceWindow.enabled ? 'auto' : 'none',
-              transition: 'opacity 0.2s ease'
-            }}>
-              <div className="form-group">
-                <label>Attendance Window Start Time</label>
-                <input 
-                  type="time" 
-                  className="auth-input" 
-                  value={attendanceWindow.startTime}
-                  onChange={e => setAttendanceWindow({...attendanceWindow, startTime: e.target.value})} 
-                  required={attendanceWindow.enabled}
-                />
-              </div>
-              <div className="form-group">
-                <label>Attendance Window End Time</label>
-                <input 
-                  type="time" 
-                  className="auth-input" 
-                  value={attendanceWindow.endTime}
-                  onChange={e => setAttendanceWindow({...attendanceWindow, endTime: e.target.value})} 
-                  required={attendanceWindow.enabled}
-                />
-              </div>
+            <div className="form-group">
+              <label htmlFor="window-closes">Window closes</label>
+              <input id="window-closes" name="endTime" type="time" className="auth-input" value={attendanceWindow.endTime} onChange={(e) => setAttendanceWindow({ ...attendanceWindow, endTime: e.target.value })} required={attendanceWindow.enabled} />
             </div>
           </div>
-        </div>
+        </section>
 
-        {/* Action Button Card */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 0.5rem' }}>
-          <span style={{ color: 'var(--success-color)', fontSize: '0.95rem', fontWeight: 600 }}>{successMsg}</span>
-          <button type="submit" className="primary-btn" disabled={isSaving} style={{ minWidth: '160px' }}>
-            <Save size={18} />
-            {isSaving ? 'Saving...' : 'Save Settings'}
-          </button>
+        <div className="settings-actions">
+          <span className="save-note">{successMsg}</span>
+          <button type="submit" className="primary-btn" disabled={isSaving}>{isSaving ? 'Saving…' : 'Save hours'}</button>
         </div>
       </form>
     </div>
