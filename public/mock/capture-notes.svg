@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="400" viewBox="0 0 640 400">
+  <rect width="640" height="400" fill="#efeae1"/>
+  <rect x="28" y="24" width="584" height="352" rx="3" fill="#f7f4ee" stroke="#d9d1c4"/>
+  <rect x="28" y="24" width="584" height="36" fill="#e4ddd0"/>
+  <circle cx="50" cy="42" r="5" fill="#8f3d1b"/>
+  <circle cx="68" cy="42" r="5" fill="#c4b8a6"/>
+  <text x="88" y="47" fill="#5c564c" font-family="ui-sans-serif, sans-serif" font-size="13">Floor notes — Ava Shah</text>
+  <text x="52" y="92" fill="#1c1916" font-family="Georgia, serif" font-size="22">Rewrite the floor notes</text>
+  <text x="52" y="128" fill="#5c564c" font-family="ui-sans-serif, sans-serif" font-size="15">Clock-ins stay with the person who stamped them.</text>
+  <text x="52" y="156" fill="#5c564c" font-family="ui-sans-serif, sans-serif" font-size="15">Hours are the gap between in and out.</text>
+  <text x="52" y="184" fill="#5c564c" font-family="ui-sans-serif, sans-serif" font-size="15">The capture window is still 9:00 to 17:00.</text>
+  <rect x="52" y="214" width="220" height="10" fill="#e4ddd0"/>
+  <rect x="52" y="234" width="360" height="10" fill="#e4ddd0"/>
+  <rect x="52" y="254" width="300" height="10" fill="#e4ddd0"/>
+</svg>
