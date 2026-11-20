@@ -17,12 +17,20 @@ jobs:
     if: github.event_name == 'push'
 
     steps:
-      - name: Note when the server secret is absent
-        if: ${{ secrets.DEPLOY_HOST == '' }}
-        run: echo "DEPLOY_HOST is not set, so this push does not SSH to the test server."
+      - name: Decide whether a test server is configured
+        id: target
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+        run: |
+          if [ -n "$DEPLOY_HOST" ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "DEPLOY_HOST is not set, so this push does not SSH to the test server."
+          fi
 
       - name: Deploy via SSH
-        if: ${{ secrets.DEPLOY_HOST != '' }}
+        if: steps.target.outputs.configured == 'true'
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.DEPLOY_HOST }}
